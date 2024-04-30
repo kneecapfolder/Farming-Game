@@ -1,4 +1,3 @@
-#include <iostream>
 #include "raylib.h"
 #include <string>
 #include <list>
@@ -25,20 +24,22 @@ struct Tile {
 struct Plant {
     Vector2 pos;
     Vector2 source;
+    double lastUpdate = -1;
 };
 
 Texture2D spriteSheet;
 map<string, Vector2> sprites;
 
+bool updateTime(float, Plant&);
 string vecToStr(Vector2);
 void drawTile(Tile, Color = WHITE);
 void drawPlant(Plant, Color = WHITE);
-void wetSoil(map<string, Tile>&);
+void wetSoil(map<string, Tile>&, map<string, Plant> &);
 bool boundsCheck(Vector2);
 float mapf(float, float, float, float, float);
 
 int main() {
-    InitWindow(CELL_SIZE*SCREEN_WIDTH, CELL_SIZE*SCREEN_HEIGHT, "Farming Game");
+    InitWindow(CELL_SIZE*SCREEN_WIDTH, CELL_SIZE*(SCREEN_HEIGHT+1), "Farming Game");
     SetTargetFPS(60);
 
     // Define sprites
@@ -61,6 +62,8 @@ int main() {
                 (Vector2){x, y},
                 "dirt",
             };
+
+    
 
     while(!WindowShouldClose()) {
         // Input
@@ -93,18 +96,23 @@ int main() {
                         };
                 break;
             };
-            wetSoil(ground);
+            if (pTile->type == "water") plants.erase(vecToStr(mousePos));
+            wetSoil(ground, plants);
         }
         
         // Right click
         else if(IsMouseButtonDown(MOUSE_BUTTON_RIGHT) && boundsCheck(mousePos)) {
             ground[vecToStr(mousePos)].type = "dirt";
             plants.erase(vecToStr(mousePos));
-            wetSoil(ground);
+            wetSoil(ground, plants);
         }
 
+        // Update
+        for(auto [key, val] : plants)
+            if (ground[key].type == "wet soil" && val.source.x < 2 && updateTime(1, plants[key])) plants[key].source.x++;
+
         BeginDrawing();
-        ClearBackground(YELLOW);
+        // ClearBackground(BLACK );
         
         // Draw Ground
         for(auto [key, val] : ground)
@@ -116,7 +124,7 @@ int main() {
 
         // Mouse hover effect
         Color hoverColors[] = {WHITE, BLUE, LIME};
-        drawTile((Tile){
+        if (boundsCheck(mousePos)) drawTile((Tile){
             (Vector2){mousePos.x, mousePos.y},
             "frame",
         }, hoverColors[tool]);
@@ -131,6 +139,19 @@ int main() {
 
     CloseWindow();    
     return 0;
+}
+
+bool updateTime(float t, Plant &plant) {
+    double curr = GetTime();
+    if (plant.lastUpdate == -1) {
+        plant.lastUpdate = curr;
+        return false;
+    }
+    if (curr - plant.lastUpdate >= t) {
+        plant.lastUpdate = curr;
+        return true;
+    }
+    return false;
 }
 
 string vecToStr(Vector2 vec) {
@@ -165,22 +186,21 @@ void drawPlant(Plant plant, Color tint) {
     DrawTexturePro(spriteSheet, source, dest, (Vector2){0, 0}, 0, tint);
 }
 
-void wetSoil(map<string, Tile> &ground) {
+void wetSoil(map<string, Tile> &ground, map<string, Plant> &plants) {
     set<string> wetSpots;
 
     for(auto [key, val] : ground) {
         if (val.type == "wet soil") ground[key].type = "soil";
         else if (val.type == "water") {
-            wetSpots.insert(vecToStr((Vector2){val.pos.x+1, val.pos.y}));
-            wetSpots.insert(vecToStr((Vector2){val.pos.x-1, val.pos.y}));
-            wetSpots.insert(vecToStr((Vector2){val.pos.x, val.pos.y+1}));
-            wetSpots.insert(vecToStr((Vector2){val.pos.x, val.pos.y-1}));
+            if (val.pos.x+1 < SCREEN_WIDTH) wetSpots.insert(vecToStr((Vector2){val.pos.x+1, val.pos.y}));
+            if (val.pos.x-1 >= 0) wetSpots.insert(vecToStr((Vector2){val.pos.x-1, val.pos.y}));
+            if (val.pos.y+1 < SCREEN_HEIGHT) wetSpots.insert(vecToStr((Vector2){val.pos.x, val.pos.y+1}));
+            if (val.pos.y-1 >= 0) wetSpots.insert(vecToStr((Vector2){val.pos.x, val.pos.y-1}));
         }
     }
 
     for(auto i : wetSpots)
         if (ground[i].type == "soil") ground[i].type = "wet soil";
-    
 }
 
 bool boundsCheck(Vector2 mousePos) {
