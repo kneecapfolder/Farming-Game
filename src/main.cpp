@@ -14,7 +14,7 @@ using std::list;
 using std::map;
 using std::set;
 
-enum Tool {hoe, bucket, seedBag};
+enum Tool {hoe, bucket, wheat, berries, len};
 
 struct Tile {
     Vector2 pos;
@@ -24,6 +24,7 @@ struct Tile {
 struct Plant {
     Vector2 pos;
     Vector2 source;
+    int growth = 0;
     double lastUpdate = -1;
 };
 
@@ -63,7 +64,6 @@ int main() {
                 "dirt",
             };
 
-    
 
     while(!WindowShouldClose()) {
         // Input
@@ -75,7 +75,8 @@ int main() {
         if (IsKeyPressed(KEY_F3)) debug = !debug;
         else if (IsKeyPressed(KEY_ONE)) tool = hoe;
         else if (IsKeyPressed(KEY_TWO)) tool = bucket;
-        else if (IsKeyPressed(KEY_THREE)) tool = seedBag;
+        else if (IsKeyPressed(KEY_THREE)) tool = wheat;
+        else if (IsKeyPressed(KEY_FOUR)) tool = berries;
 
         // Left click
         if(IsMouseButtonDown(MOUSE_BUTTON_LEFT) && boundsCheck(mousePos)) {
@@ -87,12 +88,13 @@ int main() {
                 case bucket:
                     pTile->type = "water";
                 break;
-                // Plant seed
-                case seedBag:
+                // Plant seeds
+                case wheat:
+                case berries:
                     if (pTile->type == "soil" || pTile->type == "wet soil")
                         plants[vecToStr(pTile->pos)] = (Plant){
                             pTile->pos,
-                            (Vector2){0, 2},
+                            (Vector2){tool == wheat? 0 : 3, 2},
                         };
                 break;
             };
@@ -109,10 +111,10 @@ int main() {
 
         // Update
         for(auto [key, val] : plants)
-            if (ground[key].type == "wet soil" && val.source.x < 2 && updateTime(1, plants[key])) plants[key].source.x++;
+            if (ground[key].type == "wet soil" && val.growth < 2 && updateTime(1, plants[key])) plants[key].source.x++;
 
         BeginDrawing();
-        // ClearBackground(BLACK );
+        // ClearBackground(BLACK);
         
         // Draw Ground
         for(auto [key, val] : ground)
@@ -122,8 +124,15 @@ int main() {
         for(auto [key, val] : plants)
             drawPlant(val);
 
+        // Draw hotbar
+        for(int i = 0; i < len; i++)
+            drawPlant((Plant){
+                (Vector2){i,SCREEN_HEIGHT},
+                (Vector2){i,0},
+            });
+
         // Mouse hover effect
-        Color hoverColors[] = {WHITE, BLUE, LIME};
+        Color hoverColors[] = {WHITE, BLUE, LIME, GREEN};
         if (boundsCheck(mousePos)) drawTile((Tile){
             (Vector2){mousePos.x, mousePos.y},
             "frame",
@@ -149,6 +158,7 @@ bool updateTime(float t, Plant &plant) {
     }
     if (curr - plant.lastUpdate >= t) {
         plant.lastUpdate = curr;
+        plant.growth++;
         return true;
     }
     return false;
