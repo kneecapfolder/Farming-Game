@@ -1,5 +1,6 @@
 #include "raylib.h"
 #include <string>
+#include <algorithm>
 #include <list>
 #include <map>
 #include <set>
@@ -14,7 +15,7 @@ using std::list;
 using std::map;
 using std::set;
 
-enum Tool {hoe, bucket, wheat, berries, len};
+enum Tool {hoe, bucket, sand, wheat, berries, cactus, lilyPad, len};
 
 struct Tile {
     Vector2 pos;
@@ -24,24 +25,29 @@ struct Tile {
 struct Plant {
     Vector2 pos;
     Vector2 source;
+    string groundTypes[2];
     int growth = 0;
+    int dir = 0;
     double lastUpdate = -1;
 };
 
 Texture2D spriteSheet;
 map<string, Vector2> sprites;
+map<Tool, Plant> plantTypes;
 
 bool updateTime(float, Plant&);
 string vecToStr(Vector2);
 void drawTile(Tile, Color = WHITE);
-void drawPlant(Plant, Color = WHITE);
+void drawSprite(Plant, float = 1, Color = WHITE);
 void wetSoil(map<string, Tile>&, map<string, Plant> &);
 bool boundsCheck(Vector2);
 float mapf(float, float, float, float, float);
 
 int main() {
-    InitWindow(CELL_SIZE*SCREEN_WIDTH, CELL_SIZE*(SCREEN_HEIGHT+1), "Farming Game");
+    InitWindow(CELL_SIZE*SCREEN_WIDTH, CELL_SIZE*(SCREEN_HEIGHT+2), "Farming Game");
     SetTargetFPS(60);
+
+    srand(GetTime());
 
     // Define sprites
     spriteSheet = LoadTexture("resources/spritesheet.png");
@@ -50,11 +56,35 @@ int main() {
     sprites["wet soil"] = (Vector2){2, 1};
     sprites["water"] = (Vector2){3, 1};
     sprites["frame"] = (Vector2){4, 1};
+    sprites["sand"] = (Vector2){5, 1};
+
+    plantTypes[wheat] = (Plant){
+        (Vector2){0, 0},
+        (Vector2){0, 2},
+        {"soil", "wet soil"},
+    };
+    plantTypes[berries] = (Plant){
+        (Vector2){0, 0},
+        (Vector2){3, 2},
+        {"soil", "wet soil"},
+    };
+    plantTypes[cactus] = (Plant){
+        (Vector2){0, 0},
+        (Vector2){6, 2},
+        {"sand"},
+    };
+    plantTypes[lilyPad] = (Plant){
+        (Vector2){0, 0},
+        (Vector2){9, 2},
+        {"water"},
+        2,
+    };
 
     map<string, Tile> ground;
     map<string, Plant> plants;
     bool debug = false;
     Tool tool = hoe;
+
 
     // Create ground
     for(float y = 0; y < SCREEN_HEIGHT; y++)
@@ -75,8 +105,11 @@ int main() {
         if (IsKeyPressed(KEY_F3)) debug = !debug;
         else if (IsKeyPressed(KEY_ONE)) tool = hoe;
         else if (IsKeyPressed(KEY_TWO)) tool = bucket;
-        else if (IsKeyPressed(KEY_THREE)) tool = wheat;
-        else if (IsKeyPressed(KEY_FOUR)) tool = berries;
+        else if (IsKeyPressed(KEY_THREE)) tool = sand;
+        else if (IsKeyPressed(KEY_FOUR)) tool = wheat;
+        else if (IsKeyPressed(KEY_FIVE)) tool = berries;
+        else if (IsKeyPressed(KEY_SIX)) tool = cactus;
+        else if (IsKeyPressed(KEY_SEVEN)) tool = lilyPad;
 
         // Left click
         if(IsMouseButtonDown(MOUSE_BUTTON_LEFT) && boundsCheck(mousePos)) {
@@ -88,17 +121,31 @@ int main() {
                 case bucket:
                     pTile->type = "water";
                 break;
+                case sand:
+                    pTile->type = "sand";
+                break;
                 // Plant seeds
                 case wheat:
                 case berries:
-                    if (pTile->type == "soil" || pTile->type == "wet soil")
-                        plants[vecToStr(pTile->pos)] = (Plant){
-                            pTile->pos,
-                            (Vector2){tool == wheat? 0 : 3, 2},
-                        };
-                break;
+                case cactus:
+                case lilyPad: {
+                    Plant plant = plantTypes[tool];
+                    plant.pos = pTile->pos;
+                    if (tool == lilyPad)
+                        if (plants.count(vecToStr(pTile->pos))) plant.dir = plants[vecToStr(pTile->pos)].dir;
+                        else plant.dir = rand() % 4;
+                    bool canBePlaced = false;
+                    for(auto i : plant.groundTypes)
+                        if (pTile->type == i) canBePlaced = true;
+                    if (canBePlaced) plants[vecToStr(pTile->pos)] = plant;
+                } break;
+                default: ;
             };
-            if (pTile->type == "water") plants.erase(vecToStr(mousePos));
+
+            bool keepPlant = false;
+            for(auto i : plants[vecToStr(mousePos)].groundTypes)
+                if (i == pTile->type) keepPlant = true;
+            if (!keepPlant) plants.erase(vecToStr(mousePos));
             wetSoil(ground, plants);
         }
         
@@ -111,7 +158,8 @@ int main() {
 
         // Update
         for(auto [key, val] : plants)
-            if (ground[key].type == "wet soil" && val.growth < 2 && updateTime(1, plants[key])) plants[key].source.x++;
+            if (ground[key].type != "soil")
+                if (val.growth < 2 && updateTime(1, plants[key])) plants[key].source.x++;
 
         BeginDrawing();
         // ClearBackground(BLACK);
@@ -122,24 +170,24 @@ int main() {
 
         // Draw Plants
         for(auto [key, val] : plants)
-            drawPlant(val);
+            drawSprite(val);
 
         // Draw hotbar
         for(int i = 0; i < len; i++)
-            drawPlant((Plant){
-                (Vector2){i,SCREEN_HEIGHT},
+            drawSprite((Plant){
+                (Vector2){i*2,SCREEN_HEIGHT},
                 (Vector2){i,0},
-            });
+            }, 2, i == tool? GREEN: WHITE);
 
         // Mouse hover effect
-        Color hoverColors[] = {WHITE, BLUE, LIME, GREEN};
+        Color hoverColors[] = {WHITE, BLUE, YELLOW, GREEN, LIME, DARKGREEN, DARKGREEN};
         if (boundsCheck(mousePos)) drawTile((Tile){
             (Vector2){mousePos.x, mousePos.y},
             "frame",
         }, hoverColors[tool]);
 
         if(debug)
-            DrawText(vecToStr(mousePos).c_str(), 0, 0, 20, BLUE);
+            DrawText(vecToStr(mousePos).c_str(), 0, 0, 20, GREEN);
 
         EndDrawing();
     }
@@ -182,18 +230,18 @@ void drawTile(Tile tile, Color tint) {
     DrawTexturePro(spriteSheet, source, dest, (Vector2){0, 0}, 0, tint);
 }
 
-void drawPlant(Plant plant, Color tint) {
+void drawSprite(Plant plant, float scale, Color tint) {
     Rectangle source = {
         plant.source.x*25,
         plant.source.y*25,
         25, 25,
     };
     Rectangle dest = {
-        (int)plant.pos.x*CELL_SIZE,
-        (int)plant.pos.y*CELL_SIZE,
-        CELL_SIZE, CELL_SIZE,
+        (int)plant.pos.x*CELL_SIZE+CELL_SIZE*.5*scale,
+        (int)plant.pos.y*CELL_SIZE+CELL_SIZE*.5*scale,
+        CELL_SIZE*scale, CELL_SIZE*scale,
     };
-    DrawTexturePro(spriteSheet, source, dest, (Vector2){0, 0}, 0, tint);
+    DrawTexturePro(spriteSheet, source, dest, (Vector2){dest.width/2, dest.height/2}, 90*plant.dir, tint);
 }
 
 void wetSoil(map<string, Tile> &ground, map<string, Plant> &plants) {
